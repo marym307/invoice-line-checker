@@ -1,0 +1,15 @@
+[project]
+name = "linecheck"
+version = "0.1.0"
+description = "Check invoice line-item totals against quantity, unit price, and discount"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "marym307" }]
+
+[project.scripts]
+linecheck = "linecheck.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
