@@ -20,6 +20,7 @@ class LineItem:
     unit_price: Decimal
     discount_pct: Decimal
     stated_total: Decimal
+    tax_rate: Decimal = Decimal("0")
 
 
 @dataclass
@@ -37,19 +38,30 @@ def to_decimal(value: str, field: str) -> Decimal:
         raise LineItemError(f"{field!r} is not a valid number: {value!r}")
 
 
-def expected_line_total(quantity: Decimal, unit_price: Decimal, discount_pct: Decimal) -> Decimal:
+def expected_line_total(
+    quantity: Decimal,
+    unit_price: Decimal,
+    discount_pct: Decimal,
+    tax_rate: Decimal = Decimal("0"),
+) -> Decimal:
     """Return the line total a correctly written invoice should show.
 
-    Discount is applied to the raw quantity*unit_price amount, and the
-    result is rounded to cents once, at the end, using half-up rounding
-    - that's how invoices are written by hand and by most billing
-    software, not the banker's rounding Decimal uses by default.
+    Discount is applied to the raw quantity*unit_price amount, tax is
+    applied to what's left after the discount (not the pre-discount
+    amount - charging tax on a discount you didn't actually pay would
+    be wrong), and the result is rounded to cents once, at the very
+    end, using half-up rounding - that's how invoices are written by
+    hand and by most billing software, not the banker's rounding
+    Decimal uses by default.
     """
     if discount_pct < 0 or discount_pct > 100:
         raise LineItemError(f"discount_pct out of range: {discount_pct}")
+    if tax_rate < 0:
+        raise LineItemError(f"tax_rate out of range: {tax_rate}")
     raw = quantity * unit_price
     discounted = raw * (Decimal(100) - discount_pct) / Decimal(100)
-    return discounted.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+    taxed = discounted * (Decimal(100) + tax_rate) / Decimal(100)
+    return taxed.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
 
 
 def check_line(item: LineItem, tolerance: Decimal = TWO_PLACES) -> LineResult:
@@ -59,6 +71,8 @@ def check_line(item: LineItem, tolerance: Decimal = TWO_PLACES) -> LineResult:
     invoicing systems round per-line amounts slightly differently;
     that's noise, not the kind of error this tool is meant to catch.
     """
-    expected = expected_line_total(item.quantity, item.unit_price, item.discount_pct)
+    expected = expected_line_total(
+        item.quantity, item.unit_price, item.discount_pct, item.tax_rate
+    )
     diff = (item.stated_total - expected).copy_abs()
     return LineResult(item=item, expected_total=expected, ok=diff <= tolerance, diff=diff)

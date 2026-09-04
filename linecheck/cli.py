@@ -1,11 +1,13 @@
 """Command line entry point.
 
 Reads a CSV of invoice line items and prints any line whose stated
-total doesn't match quantity * unit_price, minus the discount.
+total doesn't match quantity * unit_price, minus the discount, plus
+tax on what's left after the discount.
 """
 import argparse
 import csv
 import sys
+from decimal import Decimal
 
 from .core import LineItem, LineItemError, check_line, to_decimal
 
@@ -16,12 +18,16 @@ def parse_row(row: dict, line_number: int) -> LineItem:
     missing = [f for f in REQUIRED_FIELDS if f not in row]
     if missing:
         raise LineItemError(f"line {line_number}: missing column(s) {missing}")
+    # tax_rate is optional so existing invoices without it keep working.
+    raw_tax_rate = row.get("tax_rate", "")
+    tax_rate = to_decimal(raw_tax_rate, "tax_rate") if raw_tax_rate and raw_tax_rate.strip() else Decimal("0")
     return LineItem(
         description=row["description"],
         quantity=to_decimal(row["quantity"], "quantity"),
         unit_price=to_decimal(row["unit_price"], "unit_price"),
         discount_pct=to_decimal(row["discount_pct"], "discount_pct"),
         stated_total=to_decimal(row["total"], "total"),
+        tax_rate=tax_rate,
     )
 
 
@@ -56,7 +62,10 @@ def main(argv=None) -> int:
     )
     parser.add_argument(
         "csv_path",
-        help="CSV file with description,quantity,unit_price,discount_pct,total columns",
+        help=(
+            "CSV file with description,quantity,unit_price,discount_pct,total "
+            "columns (tax_rate is optional)"
+        ),
     )
     args = parser.parse_args(argv)
     return run(args.csv_path)

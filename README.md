@@ -14,8 +14,9 @@ still looks fine at a glance, and the error only surfaces later when
 someone reconciles against a bank statement.
 
 `linecheck` reads a CSV of line items and recomputes each total from
-scratch (`quantity * unit_price`, minus the discount, rounded to
-cents), then flags any line where the stated total doesn't match.
+scratch (`quantity * unit_price`, minus the discount, plus tax on
+what's left after the discount, rounded to cents), then flags any
+line where the stated total doesn't match.
 
 ## usage
 
@@ -36,12 +37,22 @@ Each row needs a `description`, `quantity`, `unit_price`,
 negative or fractional - a negative quantity is treated as a credit
 or return, not an error.
 
-Rounding is half-up to the nearest cent, applied once after the
-discount, which is how the total is expected to have been calculated
-in the first place. A stated total within one cent of the recomputed
-value is accepted, since different invoicing systems round
-per-line amounts slightly differently and that's not the kind of
-error this tool is meant to catch.
+An optional `tax_rate` column adds sales tax, calculated on the
+amount left after the discount rather than the pre-discount amount.
+Rows without the column, or with it left blank, are treated as
+untaxed:
+
+```
+description,quantity,unit_price,discount_pct,total,tax_rate
+Widget A,25,4.50,10,109.35,8
+```
+
+Rounding is half-up to the nearest cent, applied once at the end
+after both the discount and the tax, which is how the total is
+expected to have been calculated in the first place. A stated total
+within one cent of the recomputed value is accepted, since different
+invoicing systems round per-line amounts slightly differently and
+that's not the kind of error this tool is meant to catch.
 
 Exit status is `0` when every line checks out and `1` when at least
 one line is flagged or unparsable.

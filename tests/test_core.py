@@ -2,7 +2,8 @@
 
 These are the cases that are easy to get wrong: negative quantities
 for credits and returns, discounts that land exactly on a rounding
-boundary, and discount percentages outside 0-100.
+boundary, discount and tax percentages outside their valid ranges,
+and tax computed on the discounted amount rather than the raw one.
 """
 import unittest
 from decimal import Decimal
@@ -40,6 +41,26 @@ class ExpectedLineTotalTests(unittest.TestCase):
         with self.assertRaises(LineItemError):
             expected_line_total(Decimal("1"), Decimal("10.00"), Decimal("-1"))
 
+    def test_negative_tax_rate_is_rejected(self):
+        with self.assertRaises(LineItemError):
+            expected_line_total(Decimal("1"), Decimal("10.00"), Decimal("0"), Decimal("-1"))
+
+    def test_tax_is_charged_on_the_discounted_amount(self):
+        # $100 raw, 20% off -> $80 owed before tax, then 8% tax on that
+        # $80 -> $86.40. A customer shouldn't be taxed on the 20% they
+        # never actually paid.
+        result = expected_line_total(
+            Decimal("10"), Decimal("10.00"), Decimal("20"), Decimal("8")
+        )
+        self.assertEqual(result, Decimal("86.40"))
+
+    def test_default_tax_rate_is_zero(self):
+        with_default = expected_line_total(Decimal("5"), Decimal("10.00"), Decimal("0"))
+        with_explicit_zero = expected_line_total(
+            Decimal("5"), Decimal("10.00"), Decimal("0"), Decimal("0")
+        )
+        self.assertEqual(with_default, with_explicit_zero)
+
 
 class CheckLineTests(unittest.TestCase):
     def test_matching_total_is_ok(self):
@@ -60,6 +81,19 @@ class CheckLineTests(unittest.TestCase):
         item = LineItem("widget", Decimal("3"), Decimal("3.335"), Decimal("0"), Decimal("10.00"))
         result = check_line(item)
         self.assertTrue(result.ok)
+
+    def test_tax_rate_defaults_to_zero_for_untaxed_items(self):
+        item = LineItem("widget", Decimal("2"), Decimal("5.00"), Decimal("0"), Decimal("10.00"))
+        self.assertEqual(item.tax_rate, Decimal("0"))
+
+    def test_taxed_line_matching_total_is_ok(self):
+        item = LineItem(
+            "widget", Decimal("2"), Decimal("5.00"), Decimal("0"), Decimal("10.80"),
+            tax_rate=Decimal("8"),
+        )
+        result = check_line(item)
+        self.assertTrue(result.ok)
+        self.assertEqual(result.expected_total, Decimal("10.80"))
 
 
 if __name__ == "__main__":
