@@ -11,6 +11,8 @@ from decimal import Decimal
 
 from .core import LineItem, LineItemError, check_line, to_decimal
 
+ZERO_TOLERANCE = Decimal("0")
+
 REQUIRED_FIELDS = ("description", "quantity", "unit_price", "discount_pct", "total")
 
 
@@ -31,7 +33,8 @@ def parse_row(row: dict, line_number: int) -> LineItem:
     )
 
 
-def run(path: str, out=sys.stdout) -> int:
+def run(path: str, out=sys.stdout, strict: bool = False) -> int:
+    tolerance = ZERO_TOLERANCE if strict else None
     problems = 0
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -42,7 +45,7 @@ def run(path: str, out=sys.stdout) -> int:
                 print(f"error: {exc}", file=out)
                 problems += 1
                 continue
-            result = check_line(item)
+            result = check_line(item) if tolerance is None else check_line(item, tolerance=tolerance)
             if not result.ok:
                 problems += 1
                 print(
@@ -67,8 +70,16 @@ def main(argv=None) -> int:
             "columns (tax_rate is optional)"
         ),
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "require the stated total to match exactly, instead of allowing "
+            "the default one-cent rounding tolerance"
+        ),
+    )
     args = parser.parse_args(argv)
-    return run(args.csv_path)
+    return run(args.csv_path, strict=args.strict)
 
 
 if __name__ == "__main__":

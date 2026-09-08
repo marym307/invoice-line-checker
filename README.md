@@ -57,6 +57,13 @@ that's not the kind of error this tool is meant to catch.
 Exit status is `0` when every line checks out and `1` when at least
 one line is flagged or unparsable.
 
+Pass `--strict` to require an exact match instead of allowing the
+one-cent rounding tolerance:
+
+```
+$ python -m linecheck.cli invoice.csv --strict
+```
+
 ## installing
 
 No dependencies beyond the Python standard library (3.9+). Either run
