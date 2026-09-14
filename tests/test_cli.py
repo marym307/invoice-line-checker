@@ -63,6 +63,57 @@ class RunTests(unittest.TestCase):
             os.remove(path)
 
 
+class InvoiceTotalTests(unittest.TestCase):
+    def test_matching_invoice_total_is_silent(self):
+        path = write_csv(
+            ["widget,2,5.00,0,10.00,A1,15.00", "gadget,1,5.00,0,5.00,A1,15.00"],
+            header="description,quantity,unit_price,discount_pct,total,invoice_id,invoice_total",
+        )
+        try:
+            out = io.StringIO()
+            self.assertEqual(run(path, out=out), 0)
+            self.assertIn("all line items check out", out.getvalue())
+        finally:
+            os.remove(path)
+
+    def test_mismatched_invoice_total_is_flagged_even_with_correct_lines(self):
+        path = write_csv(
+            ["widget,2,5.00,0,10.00,A1,20.00", "gadget,1,5.00,0,5.00,A1,20.00"],
+            header="description,quantity,unit_price,discount_pct,total,invoice_id,invoice_total",
+        )
+        try:
+            out = io.StringIO()
+            self.assertEqual(run(path, out=out), 1)
+            self.assertIn("invoice 'A1'", out.getvalue())
+            self.assertIn("sum to 15.00", out.getvalue())
+        finally:
+            os.remove(path)
+
+    def test_rows_without_invoice_id_are_treated_as_one_invoice(self):
+        path = write_csv(
+            ["widget,2,5.00,0,10.00,,25.00", "gadget,1,5.00,0,5.00,,25.00"],
+            header="description,quantity,unit_price,discount_pct,total,invoice_id,invoice_total",
+        )
+        try:
+            out = io.StringIO()
+            self.assertEqual(run(path, out=out), 1)
+            self.assertIn("sum to 15.00", out.getvalue())
+        finally:
+            os.remove(path)
+
+    def test_conflicting_invoice_totals_for_same_invoice_are_reported(self):
+        path = write_csv(
+            ["widget,2,5.00,0,10.00,A1,15.00", "gadget,1,5.00,0,5.00,A1,16.00"],
+            header="description,quantity,unit_price,discount_pct,total,invoice_id,invoice_total",
+        )
+        try:
+            out = io.StringIO()
+            self.assertEqual(run(path, out=out), 1)
+            self.assertIn("conflicting invoice_total", out.getvalue())
+        finally:
+            os.remove(path)
+
+
 class MainTests(unittest.TestCase):
     def test_strict_flag_is_wired_through(self):
         path = write_csv(["widget,3,3.335,0,10.00"])

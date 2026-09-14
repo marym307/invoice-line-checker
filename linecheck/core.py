@@ -21,12 +21,22 @@ class LineItem:
     discount_pct: Decimal
     stated_total: Decimal
     tax_rate: Decimal = Decimal("0")
+    invoice_id: str = "1"
 
 
 @dataclass
 class LineResult:
     item: LineItem
     expected_total: Decimal
+    ok: bool
+    diff: Decimal
+
+
+@dataclass
+class InvoiceResult:
+    invoice_id: str
+    stated_total: Decimal
+    line_item_sum: Decimal
     ok: bool
     diff: Decimal
 
@@ -76,3 +86,26 @@ def check_line(item: LineItem, tolerance: Decimal = TWO_PLACES) -> LineResult:
     )
     diff = (item.stated_total - expected).copy_abs()
     return LineResult(item=item, expected_total=expected, ok=diff <= tolerance, diff=diff)
+
+
+def check_invoice_total(
+    line_items: list, stated_total: Decimal, tolerance: Decimal = TWO_PLACES
+) -> InvoiceResult:
+    """Compare an invoice's stated grand total to its line items added up.
+
+    This catches a different mistake than check_line: every line can be
+    individually correct (quantity * price, minus discount, matches its
+    own total) while the invoice as a whole is still wrong, because a
+    line was left off, entered twice, or the grand total was hand-typed
+    instead of summed.
+    """
+    line_item_sum = sum((item.stated_total for item in line_items), Decimal("0"))
+    diff = (stated_total - line_item_sum).copy_abs()
+    invoice_id = line_items[0].invoice_id if line_items else ""
+    return InvoiceResult(
+        invoice_id=invoice_id,
+        stated_total=stated_total,
+        line_item_sum=line_item_sum,
+        ok=diff <= tolerance,
+        diff=diff,
+    )

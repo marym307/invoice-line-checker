@@ -8,7 +8,13 @@ and tax computed on the discounted amount rather than the raw one.
 import unittest
 from decimal import Decimal
 
-from linecheck.core import LineItem, LineItemError, check_line, expected_line_total
+from linecheck.core import (
+    LineItem,
+    LineItemError,
+    check_invoice_total,
+    check_line,
+    expected_line_total,
+)
 
 
 class ExpectedLineTotalTests(unittest.TestCase):
@@ -94,6 +100,41 @@ class CheckLineTests(unittest.TestCase):
         result = check_line(item)
         self.assertTrue(result.ok)
         self.assertEqual(result.expected_total, Decimal("10.80"))
+
+
+class CheckInvoiceTotalTests(unittest.TestCase):
+    def _items(self, *totals):
+        return [
+            LineItem(f"item {i}", Decimal("1"), Decimal(t), Decimal("0"), Decimal(t))
+            for i, t in enumerate(totals)
+        ]
+
+    def test_matching_invoice_total_is_ok(self):
+        items = self._items("10.00", "5.00")
+        result = check_invoice_total(items, Decimal("15.00"))
+        self.assertTrue(result.ok)
+        self.assertEqual(result.line_item_sum, Decimal("15.00"))
+        self.assertEqual(result.diff, Decimal("0.00"))
+
+    def test_mismatched_invoice_total_is_flagged_even_if_every_line_is_correct(self):
+        # Each line reconciles with itself; the invoice was still typed
+        # up wrong (a line missing, or the total hand-entered).
+        items = self._items("10.00", "5.00")
+        result = check_invoice_total(items, Decimal("20.00"))
+        self.assertFalse(result.ok)
+        self.assertEqual(result.diff, Decimal("5.00"))
+
+    def test_invoice_id_comes_from_the_line_items(self):
+        items = [
+            LineItem("widget", Decimal("1"), Decimal("10.00"), Decimal("0"), Decimal("10.00"), invoice_id="A100")
+        ]
+        result = check_invoice_total(items, Decimal("10.00"))
+        self.assertEqual(result.invoice_id, "A100")
+
+    def test_within_tolerance_is_ok(self):
+        items = self._items("10.005")
+        result = check_invoice_total(items, Decimal("10.01"))
+        self.assertTrue(result.ok)
 
 
 if __name__ == "__main__":

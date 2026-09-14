@@ -47,6 +47,21 @@ description,quantity,unit_price,discount_pct,total,tax_rate
 Widget A,25,4.50,10,109.35,8
 ```
 
+An optional `invoice_id` column groups rows that belong to the same
+invoice, so one CSV can hold several invoices' line items. Rows
+without it are all treated as a single invoice. An optional
+`invoice_total` column, set on any one (or more, as long as they
+agree) row of an invoice, is checked against that invoice's line
+totals added up - this catches a line that got left out or entered
+twice, or a grand total that was hand-typed instead of summed, even
+when every individual line reconciles correctly on its own:
+
+```
+description,quantity,unit_price,discount_pct,total,invoice_id,invoice_total
+Consulting - September,10,150.00,0,1500.00,A100,1569.97
+Widget B,3,19.99,0,69.97,A100,
+```
+
 Rounding is half-up to the nearest cent, applied once at the end
 after both the discount and the tax, which is how the total is
 expected to have been calculated in the first place. A stated total
