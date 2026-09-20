@@ -13,6 +13,7 @@ from linecheck.core import (
     LineItemError,
     check_invoice_total,
     check_line,
+    currency_quantum,
     expected_line_total,
 )
 
@@ -67,6 +68,33 @@ class ExpectedLineTotalTests(unittest.TestCase):
         )
         self.assertEqual(with_default, with_explicit_zero)
 
+    def test_jpy_has_no_decimal_places(self):
+        result = expected_line_total(
+            Decimal("3"), Decimal("1000"), Decimal("0"), currency="JPY"
+        )
+        self.assertEqual(result, Decimal("3000"))
+
+    def test_jpy_rounds_half_up_to_a_whole_unit(self):
+        result = expected_line_total(
+            Decimal("1"), Decimal("10.5"), Decimal("0"), currency="JPY"
+        )
+        self.assertEqual(result, Decimal("11"))
+
+    def test_bhd_has_three_decimal_places(self):
+        result = expected_line_total(
+            Decimal("2"), Decimal("1.2345"), Decimal("0"), currency="BHD"
+        )
+        self.assertEqual(result, Decimal("2.469"))
+
+    def test_unknown_currency_falls_back_to_two_decimal_places(self):
+        result = expected_line_total(
+            Decimal("1"), Decimal("10.005"), Decimal("0"), currency="XYZ"
+        )
+        self.assertEqual(result, Decimal("10.01"))
+
+    def test_currency_lookup_is_case_insensitive(self):
+        self.assertEqual(currency_quantum("jpy"), currency_quantum("JPY"))
+
 
 class CheckLineTests(unittest.TestCase):
     def test_matching_total_is_ok(self):
@@ -101,6 +129,24 @@ class CheckLineTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.expected_total, Decimal("10.80"))
 
+    def test_jpy_line_tolerance_is_one_yen_not_one_cent(self):
+        # 3000.4 rounds to 3000; a stated total of 3001 is within one
+        # yen, so it should pass even though it's a whole unit off.
+        item = LineItem(
+            "widget", Decimal("1"), Decimal("3000.4"), Decimal("0"), Decimal("3001"),
+            currency="JPY",
+        )
+        result = check_line(item)
+        self.assertTrue(result.ok)
+
+    def test_jpy_line_two_yen_off_fails(self):
+        item = LineItem(
+            "widget", Decimal("1"), Decimal("3000"), Decimal("0"), Decimal("3002"),
+            currency="JPY",
+        )
+        result = check_line(item)
+        self.assertFalse(result.ok)
+
 
 class CheckInvoiceTotalTests(unittest.TestCase):
     def _items(self, *totals):
@@ -134,6 +180,13 @@ class CheckInvoiceTotalTests(unittest.TestCase):
     def test_within_tolerance_is_ok(self):
         items = self._items("10.005")
         result = check_invoice_total(items, Decimal("10.01"))
+        self.assertTrue(result.ok)
+
+    def test_jpy_invoice_tolerance_is_one_yen(self):
+        items = [
+            LineItem("widget", Decimal("1"), Decimal("3000"), Decimal("0"), Decimal("3000"), currency="JPY")
+        ]
+        result = check_invoice_total(items, Decimal("3001"))
         self.assertTrue(result.ok)
 
 

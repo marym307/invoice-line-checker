@@ -114,6 +114,40 @@ class InvoiceTotalTests(unittest.TestCase):
             os.remove(path)
 
 
+class CurrencyTests(unittest.TestCase):
+    def test_jpy_line_with_no_decimal_places_checks_out(self):
+        path = write_csv(
+            ["widget,3,1000,0,3000,JPY"],
+            header="description,quantity,unit_price,discount_pct,total,currency",
+        )
+        try:
+            out = io.StringIO()
+            self.assertEqual(run(path, out=out), 0)
+            self.assertIn("all line items check out", out.getvalue())
+        finally:
+            os.remove(path)
+
+    def test_jpy_mismatch_is_flagged_with_a_whole_number_expected_total(self):
+        path = write_csv(
+            ["widget,3,1000,0,3500,JPY"],
+            header="description,quantity,unit_price,discount_pct,total,currency",
+        )
+        try:
+            out = io.StringIO()
+            self.assertEqual(run(path, out=out), 1)
+            self.assertIn("expected 3000", out.getvalue())
+        finally:
+            os.remove(path)
+
+    def test_missing_currency_column_defaults_to_usd(self):
+        path = write_csv(["widget,2,5.00,0,10.00"])
+        try:
+            out = io.StringIO()
+            self.assertEqual(run(path, out=out), 0)
+        finally:
+            os.remove(path)
+
+
 class MainTests(unittest.TestCase):
     def test_strict_flag_is_wired_through(self):
         path = write_csv(["widget,3,3.335,0,10.00"])

@@ -15,8 +15,8 @@ someone reconciles against a bank statement.
 
 `linecheck` reads a CSV of line items and recomputes each total from
 scratch (`quantity * unit_price`, minus the discount, plus tax on
-what's left after the discount, rounded to cents), then flags any
-line where the stated total doesn't match.
+what's left after the discount, rounded to the currency's minor
+unit), then flags any line where the stated total doesn't match.
 
 ## usage
 
@@ -62,18 +62,29 @@ Consulting - September,10,150.00,0,1500.00,A100,1569.97
 Widget B,3,19.99,0,69.97,A100,
 ```
 
-Rounding is half-up to the nearest cent, applied once at the end
-after both the discount and the tax, which is how the total is
-expected to have been calculated in the first place. A stated total
-within one cent of the recomputed value is accepted, since different
-invoicing systems round per-line amounts slightly differently and
-that's not the kind of error this tool is meant to catch.
+An optional `currency` column sets the currency for a row, which
+matters because not every currency rounds to two decimal places. Rows
+without it are assumed to be USD. Yen, Korean won, and a handful of
+other currencies have no minor unit at all:
+
+```
+description,quantity,unit_price,discount_pct,total,currency
+Consulting - September,10,15000,0,150000,JPY
+```
+
+Rounding is half-up, applied once at the end after both the discount
+and the tax, which is how the total is expected to have been
+calculated in the first place. A stated total within one minor unit
+of the recomputed value is accepted (one cent for USD, one yen for
+JPY, and so on), since different invoicing systems round per-line
+amounts slightly differently and that's not the kind of error this
+tool is meant to catch.
 
 Exit status is `0` when every line checks out and `1` when at least
 one line is flagged or unparsable.
 
 Pass `--strict` to require an exact match instead of allowing the
-one-cent rounding tolerance:
+one-minor-unit rounding tolerance:
 
 ```
 $ python -m linecheck.cli invoice.csv --strict

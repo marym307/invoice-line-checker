@@ -27,6 +27,10 @@ def parse_row(row: dict, line_number: int) -> LineItem:
     # invoice, so single-invoice files don't need to name it.
     raw_invoice_id = row.get("invoice_id", "")
     invoice_id = raw_invoice_id.strip() if raw_invoice_id and raw_invoice_id.strip() else "1"
+    # currency is optional; rows without it are assumed to be USD, which
+    # rounds the same way as most other currencies anyway.
+    raw_currency = row.get("currency", "")
+    currency = raw_currency.strip().upper() if raw_currency and raw_currency.strip() else "USD"
     return LineItem(
         description=row["description"],
         quantity=to_decimal(row["quantity"], "quantity"),
@@ -35,6 +39,7 @@ def parse_row(row: dict, line_number: int) -> LineItem:
         stated_total=to_decimal(row["total"], "total"),
         tax_rate=tax_rate,
         invoice_id=invoice_id,
+        currency=currency,
     )
 
 
@@ -110,7 +115,8 @@ def main(argv=None) -> int:
         "csv_path",
         help=(
             "CSV file with description,quantity,unit_price,discount_pct,total "
-            "columns (tax_rate, invoice_id, and invoice_total are optional)"
+            "columns (tax_rate, invoice_id, invoice_total, and currency are "
+            "optional; currency defaults to USD)"
         ),
     )
     parser.add_argument(
@@ -118,7 +124,7 @@ def main(argv=None) -> int:
         action="store_true",
         help=(
             "require the stated total to match exactly, instead of allowing "
-            "the default one-cent rounding tolerance"
+            "the default one-minor-unit rounding tolerance"
         ),
     )
     args = parser.parse_args(argv)
