@@ -90,6 +90,20 @@ one-minor-unit rounding tolerance:
 $ python -m linecheck.cli invoice.csv --strict
 ```
 
+Pass `--json` to get a single JSON object on stdout instead of text,
+for piping into another program:
+
+```
+$ python -m linecheck.cli invoice.csv --json
+{"ok": false, "problems": [{"type": "line_mismatch", "line": 4, "description": "Widget B", "stated_total": "69.97", "expected_total": "59.97", "diff": "10.00"}]}
+```
+
+`problems` is a list of objects, each with a `"type"` of
+`line_mismatch`, `invoice_mismatch`, `invoice_total_conflict`, or
+`error` (an unparsable row). `ok` is `true` only when the list is
+empty. Numbers are given as strings so exact decimal values survive
+the round trip through JSON.
+
 ## installing
 
 No dependencies beyond the Python standard library (3.9+). Either run

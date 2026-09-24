@@ -4,7 +4,9 @@ The core module already covers the reconciliation math in isolation;
 these tests are about the plumbing around it - parsing rows out of an
 actual file, exit codes, and the strict/non-strict tolerance switch.
 """
+import contextlib
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -154,6 +156,73 @@ class MainTests(unittest.TestCase):
         try:
             self.assertEqual(main([path]), 0)
             self.assertEqual(main([path, "--strict"]), 1)
+        finally:
+            os.remove(path)
+
+
+class JsonOutputTests(unittest.TestCase):
+    def test_clean_invoice_reports_ok_with_no_problems(self):
+        path = write_csv(["widget,2,5.00,0,10.00"])
+        try:
+            out = io.StringIO()
+            self.assertEqual(run(path, out=out, json_output=True), 0)
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload, {"ok": True, "problems": []})
+        finally:
+            os.remove(path)
+
+    def test_mismatched_total_is_reported_as_structured_problem(self):
+        path = write_csv(["widget,2,5.00,0,11.00"])
+        try:
+            out = io.StringIO()
+            self.assertEqual(run(path, out=out, json_output=True), 1)
+            payload = json.loads(out.getvalue())
+            self.assertFalse(payload["ok"])
+            self.assertEqual(len(payload["problems"]), 1)
+            problem = payload["problems"][0]
+            self.assertEqual(problem["type"], "line_mismatch")
+            self.assertEqual(problem["line"], 2)
+            self.assertEqual(problem["expected_total"], "10.00")
+            self.assertEqual(problem["diff"], "1.00")
+        finally:
+            os.remove(path)
+
+    def test_unparsable_row_is_a_structured_error(self):
+        path = write_csv(["widget,not-a-number,5.00,0,10.00"])
+        try:
+            out = io.StringIO()
+            self.assertEqual(run(path, out=out, json_output=True), 1)
+            payload = json.loads(out.getvalue())
+            problem = payload["problems"][0]
+            self.assertEqual(problem["type"], "error")
+            self.assertEqual(problem["line"], 2)
+        finally:
+            os.remove(path)
+
+    def test_invoice_mismatch_is_a_structured_problem(self):
+        path = write_csv(
+            ["widget,2,5.00,0,10.00,A1,20.00", "gadget,1,5.00,0,5.00,A1,20.00"],
+            header="description,quantity,unit_price,discount_pct,total,invoice_id,invoice_total",
+        )
+        try:
+            out = io.StringIO()
+            self.assertEqual(run(path, out=out, json_output=True), 1)
+            payload = json.loads(out.getvalue())
+            problem = payload["problems"][0]
+            self.assertEqual(problem["type"], "invoice_mismatch")
+            self.assertEqual(problem["invoice_id"], "A1")
+            self.assertEqual(problem["line_item_sum"], "15.00")
+        finally:
+            os.remove(path)
+
+    def test_json_flag_is_wired_through_main(self):
+        path = write_csv(["widget,2,5.00,0,10.00"])
+        try:
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                self.assertEqual(main([path, "--json"]), 0)
+            payload = json.loads(captured.getvalue())
+            self.assertEqual(payload, {"ok": True, "problems": []})
         finally:
             os.remove(path)
 

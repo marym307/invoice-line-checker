@@ -6,6 +6,7 @@ tax on what's left after the discount.
 """
 import argparse
 import csv
+import json
 import sys
 from decimal import Decimal
 
@@ -43,9 +44,36 @@ def parse_row(row: dict, line_number: int) -> LineItem:
     )
 
 
-def run(path: str, out=sys.stdout, strict: bool = False) -> int:
+def format_problem(problem: dict) -> str:
+    """Render one problem dict as the text-mode line a human reads.
+
+    Kept separate from JSON mode so both modes are built from the same
+    data instead of duplicating the reconciliation walk.
+    """
+    kind = problem["type"]
+    if kind == "error":
+        return f"error: {problem['message']}"
+    if kind == "line_mismatch":
+        return (
+            f"line {problem['line']}: {problem['description']!r} stated {problem['stated_total']} "
+            f"but expected {problem['expected_total']} (off by {problem['diff']})"
+        )
+    if kind == "invoice_total_conflict":
+        return (
+            f"error: line {problem['line']}: conflicting invoice_total for "
+            f"invoice {problem['invoice_id']!r} ({problem['seen']} vs {problem['stated']})"
+        )
+    if kind == "invoice_mismatch":
+        return (
+            f"invoice {problem['invoice_id']!r}: stated total {problem['stated_total']} but line "
+            f"items sum to {problem['line_item_sum']} (off by {problem['diff']})"
+        )
+    raise ValueError(f"unknown problem type: {kind}")  # pragma: no cover
+
+
+def run(path: str, out=sys.stdout, strict: bool = False, json_output: bool = False) -> int:
     tolerance = ZERO_TOLERANCE if strict else None
-    problems = 0
+    problems = []
     items_by_invoice = {}
     stated_invoice_totals = {}
     with open(path, newline="", encoding="utf-8") as f:
@@ -54,17 +82,18 @@ def run(path: str, out=sys.stdout, strict: bool = False) -> int:
             try:
                 item = parse_row(row, line_number)
             except LineItemError as exc:
-                print(f"error: {exc}", file=out)
-                problems += 1
+                problems.append({"type": "error", "line": line_number, "message": str(exc)})
                 continue
             result = check_line(item) if tolerance is None else check_line(item, tolerance=tolerance)
             if not result.ok:
-                problems += 1
-                print(
-                    f"line {line_number}: {item.description!r} stated {item.stated_total} "
-                    f"but expected {result.expected_total} (off by {result.diff})",
-                    file=out,
-                )
+                problems.append({
+                    "type": "line_mismatch",
+                    "line": line_number,
+                    "description": item.description,
+                    "stated_total": str(item.stated_total),
+                    "expected_total": str(result.expected_total),
+                    "diff": str(result.diff),
+                })
             items_by_invoice.setdefault(item.invoice_id, []).append(item)
 
             raw_invoice_total = row.get("invoice_total", "")
@@ -72,17 +101,17 @@ def run(path: str, out=sys.stdout, strict: bool = False) -> int:
                 try:
                     stated = to_decimal(raw_invoice_total, "invoice_total")
                 except LineItemError as exc:
-                    print(f"error: {exc}", file=out)
-                    problems += 1
+                    problems.append({"type": "error", "line": line_number, "message": str(exc)})
                     continue
                 seen = stated_invoice_totals.get(item.invoice_id)
                 if seen is not None and seen != stated:
-                    print(
-                        f"error: line {line_number}: conflicting invoice_total for "
-                        f"invoice {item.invoice_id!r} ({seen} vs {stated})",
-                        file=out,
-                    )
-                    problems += 1
+                    problems.append({
+                        "type": "invoice_total_conflict",
+                        "line": line_number,
+                        "invoice_id": item.invoice_id,
+                        "seen": str(seen),
+                        "stated": str(stated),
+                    })
                 else:
                     stated_invoice_totals[item.invoice_id] = stated
 
@@ -94,15 +123,21 @@ def run(path: str, out=sys.stdout, strict: bool = False) -> int:
             else check_invoice_total(items, stated_total, tolerance=tolerance)
         )
         if not result.ok:
-            problems += 1
-            print(
-                f"invoice {invoice_id!r}: stated total {result.stated_total} but line "
-                f"items sum to {result.line_item_sum} (off by {result.diff})",
-                file=out,
-            )
+            problems.append({
+                "type": "invoice_mismatch",
+                "invoice_id": invoice_id,
+                "stated_total": str(result.stated_total),
+                "line_item_sum": str(result.line_item_sum),
+                "diff": str(result.diff),
+            })
 
-    if problems == 0:
-        print("all line items check out", file=out)
+    if json_output:
+        print(json.dumps({"ok": not problems, "problems": problems}), file=out)
+    else:
+        for problem in problems:
+            print(format_problem(problem), file=out)
+        if not problems:
+            print("all line items check out", file=out)
     return 1 if problems else 0
 
 
@@ -127,8 +162,13 @@ def main(argv=None) -> int:
             "the default one-minor-unit rounding tolerance"
         ),
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="print a single JSON object instead of text, for scripting",
+    )
     args = parser.parse_args(argv)
-    return run(args.csv_path, strict=args.strict)
+    return run(args.csv_path, strict=args.strict, json_output=args.json)
 
 
 if __name__ == "__main__":
